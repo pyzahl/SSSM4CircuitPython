@@ -15,7 +15,9 @@ import displayio
 from adafruit_display_shapes.rect import Rect
 
 import busio
+#import adafruit_vl53l0x
 import ipaddress
+import adafruit_tsl2591
 from adafruit_lc709203f import LC709203F, PackSize
 
 import ssl
@@ -32,40 +34,25 @@ from adafruit_esp32s2tft import ESP32S2TFT
 
 gc.collect()   # make some rooooom
 
-##                          S2 new S2 old
-#             Center Value  CZ     Py      Ideal
-R2_N_Measurements = 43 ## sqrt (N Samples for Ref Int and RMS)
-##
-#### original build V0
-Analog0InCenter   = 32603
-Analog1InCenter   = 32643
-## 32592.0 32624.1 ## original build S3
-## 61  Zero Cal Info: [I, R, U0, U1]   1.88   1.59 1642.94 1644.33 mV avI,R:   11.9   19.7 avU0,1: 32602.7 32643.4 U0,1: 32627.8 32655.5 ## original build PY - ESP32-S3
-
-#### new build V1
-#Analog0InCenter   = 33028
-#Analog1InCenter   = 33029
-## 55  Zero Cal Info: [I, R, U0, U1]  21.58  20.30 1662.75 1663.12 mV avI,R:  436.3  405.0 avU0,1: 33027.8 33028.8 U0,1: 33021.2 33028.6 ## new build CZ - ESP32-S3
-
 DipSW = {
 	'1': DigitalInOut(board.A2),  ## Read/Write (DIP on := GND [==Logic False]) => recording to logfile / no recording
-	'2': DigitalInOut(board.A3),  ## WiFi+MQTT Logging On/Off  *** disabled Use I2C Sensor
+	'2': DigitalInOut(board.A3),  ## MQTT Logging On/Off  *** disabled Use I2C Sensor
 	'3': DigitalInOut(board.A4),  ## FireCapture prints/Full report prints to console
-	'4': DigitalInOut(board.A5),  ## Zero Calib Info ON / OFF
+	'4': DigitalInOut(board.A5),  ## WiFi ON / OFF
 	}
 
 DipSWinfoClosed = { ## Logic "False" as DIP=ON is pin on GND
         '1': 'Record to Logfile',
-        '2': 'WiFi+MQTT IoT Transmit',
+        '2': 'MQTT IoT Transmit',
         '3': 'FC Print',
-        '4': 'Zero Offset Calibration',
+        '4': 'WiFi',
         }
 
 DipSWinfoOpen = { ## Logic "True" = OPEN/OFF
         '1': 'No Logging',
-        '2': 'No Wifi+MQTT',
+        '2': 'No MQTT',
         '3': 'Long Status Print',
-        '4': 'Normal Operation',
+        '4': 'WiFi Off',
         }
 
 # DIP SWITCH INFO
@@ -74,11 +61,9 @@ for pin in sorted(DipSW):
 	DipSW[pin].switch_to_input(pull=Pull.UP)
         if DipSW[pin].value == False:
                 info = DipSWinfoClosed[pin]
-                dip='On: '
         else:
                 info = DipSWinfoOpen[pin]
-                dip='Off:'
-	print ('Dip SW', pin, dip, info)
+	print ('Dip SW', pin, DipSW[pin].value, info)
 
 PinPhotoOK = DigitalInOut(board.D5)
 PinPhotoOK.direction = Direction.OUTPUT
@@ -124,7 +109,7 @@ except ImportError:
 	print("WiFi secrets are kept in secrets.py, please add them there!")
 	raise
 
-if DipSW['2'].value == False:
+if DipSW['4'].value == False:
         print('Connecting WiFi...')
         print("Connecting to %s" % secrets["ssid"])
         wifi.radio.connect(secrets["ssid"], secrets["password"])
@@ -154,12 +139,14 @@ else:
 sssm_time_feed = "feeds/sssm/time"
 sssm_arcs_feed = "feeds/sssm/arcs"
 sssm_ref_feed  = "feeds/sssm/refint"
+sssm_lux_feed  = "feeds/sssm/lux"
 sssm_bat_feed  = "feeds/sssm/battery"
 
 ## test adafruit.io -- very limited rate and points (30/min total)
 #sssm_time_feed = "pyzahl2/feeds/sssm.time"
 #sssm_arcs_feed = "pyzahl2/feeds/sssm.arcs"
 #sssm_ref_feed  = "pyzahl2/feeds/sssm.refint"
+#sssm_lux_feed  = "pyzahl2/feeds/sssm.lux"
 #sssm_bat_feed  = "pyzahl2/feeds/sssm.battery"
 
 # Setup a feed named 'onoff' for subscribing to changes
@@ -189,7 +176,7 @@ def message(client, topic, message):
     print("New message on topic {0}: {1}".format(topic, message))
 
 
-if DipSW['2'].value == False:
+if DipSW['4'].value == False and DipSW['2'].value == False:
         print ('MQTT Client Configuration:')
         pool = socketpool.SocketPool(wifi.radio)
 
@@ -241,7 +228,7 @@ esp32s2tft = ESP32S2TFT(
 
 # Create the labels
 status = esp32s2tft.add_text(
-	text='SSSM V1.0',
+	text='SSSMv0',
 	text_position=(0, 10),
 	text_scale=3,
 	text_color=0xFF00FF
@@ -255,9 +242,9 @@ battery = esp32s2tft.add_text(
 	text_color=0x00FF00
 )
 
-info_last = " "
+info_last = "ReCal: BOOT0 Button"
 info_label = esp32s2tft.add_text(
-	text=info_last,
+	text="ReCal: BOOT0 Button",
 	line_spacing=1.0,
 	text_position=(240, 20),
 	text_anchor_point=(1.0, 0.5),
@@ -265,7 +252,7 @@ info_label = esp32s2tft.add_text(
 	text_color=0x606060,
 )
 
-reading_last = '(C) PyZahl'
+reading_last = 'Record: boot+A3=GND'
 
 reading = esp32s2tft.add_text(
 	text=reading_last,
@@ -275,9 +262,8 @@ reading = esp32s2tft.add_text(
 	text_color=0xFFFF00,
 )
 
-if 1:
-	reading_aux_last = 'Happy Seeing'
-#	reading_aux_last = 'Happy Birthday'
+if 0:
+	reading_aux_last = 'AUX READING'
 
 	reading_aux = esp32s2tft.add_text(
 		text=reading_aux_last,
@@ -287,8 +273,7 @@ if 1:
 		text_color=0xFFFF00,
 	)
 
-	reading_arc_last = 'K150'
-#	reading_arc_last = 'Carsten!!!'
+	reading_arc_last = 'ARC READING'
 
 	reading_arc = esp32s2tft.add_text(
 		text=reading_arc_last,
@@ -303,12 +288,12 @@ if 1:
 	GYMAX1=GYMAX-1
 	graph_bitmap = displayio.Bitmap(240, GYMAX, 6)
 	color_palette = displayio.Palette(6)
-	color_palette[0] = 0x000000 # clear, black
-	color_palette[1] = 0xFF4000 # orange for arcs
-	color_palette[2] = 0xFFFF00 # yellow for ref sun intensity 
-	color_palette[3] = 0x0000FF # blue
-	color_palette[4] = 0x330000 # dark red, grid
-	color_palette[5] = 0x003300 # 1 arcs line / dark green
+	color_palette[0] = 0x000000
+	color_palette[1] = 0xFF3000
+	color_palette[2] = 0x00FF00
+	color_palette[3] = 0x0000FF
+	color_palette[4] = 0x330000
+	color_palette[5] = 0x003300
 
 	gr_sprite = displayio.TileGrid(graph_bitmap,
 		                       pixel_shader=color_palette,
@@ -322,6 +307,49 @@ if 1:
 #	esp32s2tft.splash.append(Rect(i*8, 100, 4, 20, fill=0x00FF00))
 
 esp32s2tft.display.show(esp32s2tft.splash)
+
+### TSL Light Sensor I2C
+i2c = board.I2C()
+
+print ('Checking for LUX sensor TSL2591')
+try:
+	sensor = adafruit_tsl2591.TSL2591(i2c)
+	sensor.gain = adafruit_tsl2591.GAIN_LOW
+	sensor.integration_time = adafruit_tsl2591.INTEGRATIONTIME_100MS
+	time.sleep(1.0)
+	lux_read = True
+        print ('... found TSL2591')
+except ValueError as e:
+	print(e)
+	lux_read = False
+        print ('... none')
+
+# You can optionally change the gain and integration time:
+# sensor.gain = adafruit_tsl2591.GAIN_LOW  #    1x gain
+# sensor.gain = adafruit_tsl2591.GAIN_MED  #   25x gain, the default
+# sensor.gain = adafruit_tsl2591.GAIN_HIGH #  428x gain
+# sensor.gain = adafruit_tsl2591.GAIN_MAX  # 9876x gain
+
+# sensor.integration_time = adafruit_tsl2591.INTEGRATIONTIME_100MS # 100ms, default
+# sensor.integration_time = adafruit_tsl2591.INTEGRATIONTIME_200MS # 200ms
+# sensor.integration_time = adafruit_tsl2591.INTEGRATIONTIME_300MS # 300ms
+# sensor.integration_time = adafruit_tsl2591.INTEGRATIONTIME_400MS # 400ms
+# sensor.integration_time = adafruit_tsl2591.INTEGRATIONTIME_500MS # 500ms
+# sensor.integration_time = adafruit_tsl2591.INTEGRATIONTIME_600MS # 600ms
+
+
+# Measure Pulse Length
+#NMEASURE  = 128
+#NMEASURE2 = 512
+#pulses = pulseio.PulseIn(board.D10, maxlen=NMEASURE)
+#time.sleep (1.0)
+
+####PASS vl53l0x.VL53L0X
+
+# Built in red LED
+#led = DigitalInOut(board.LED)
+#led.direction = Direction.OUTPUT
+#led.value = False
 
 
 # Analog input on A1
@@ -340,51 +368,39 @@ def Voltage(value):
 def mVoltage(value):
     return (value * 3.3) / 65.536
 
-## Center/Zero Measurement
-def SSSM_analog_zero_calib(n22=32):
-	N=n22*n22
-	fn22=float(n22)
-        I=0
-        R=0
-        U0=0
-        U1=1
-        ## some integer math radix 2 tricks
-	for i in range(N):
-		u0 = analog0in.value - Analog0InCenter
-		u1 = analog1in.value - Analog1InCenter
-                I = I + u0
-                R = R + u1
-		U0 = U0 + analog0in.value
-                U1 = U1 + analog1in.value
-                ##**
-        I=I/n22
-        I=I/fn22
-        R=R/n22
-        R=R/fn22
-        U0=U0/n22
-        U0=U0/fn22
-        U1=U1/n22
-        U1=U1/fn22
-        return I, R, U0, U1
-
-        
-## SSSM analog read -- NOTE: we do have only FLOAT here (30-bit wide floating point) or 32bit int
+## SSSM analog test -- NOTE: we do have only FLOAT here (30-bit wide floating point) or 32bit int
 def SSSM_analog(n22=32):
 	I=0
 	RMS=0
 	N=n22*n22
 	fn22=float(n22)
+        ##** Offset Calibration only
+        ##R=0
+        ##U0=0
+        ##U1=1
+        ##**
         ## some integer math radix 2 tricks
 	for i in range(N):
-		u0 = analog0in.value - Analog0InCenter
-		u1 = analog1in.value - Analog1InCenter
+                #                      Center Value  CZ     Py      Ideal
+		u0 = analog0in.value - 32199        #32199 #33025  #32768  # offset corrected
+		u1 = analog1in.value - 32956        #32965 #33104  #32768  # offset corrected
 		I = I + u0
 		RMS= RMS + u1*u1
+                ##** Calib only
+                ##R = R + u1
+		##U0 = U0 + analog0in.value
+                ##U1 = U1 + analog1in.value
+                ##**
+        ##** CALIBRATION MODE PRINT READINGS:
+        ##print (U0>>10, U1>>10, I, R, RMS, analog0in.value, analog1in.value)
+        ##U0=U0>>10
+        ##U1=U1>>10
+        ##print (U0, U1, mVoltage(U0), mVoltage(U1))
+        ##**
 
         ref = I/fn22   # I>>10 = I/32/32
 	if ref < 1:
-		ref = 1 # prevent div zero and negative nonsense
-
+		ref = 1
 	rms = math.sqrt(RMS)  ## sqrt(RMS>>10) = sqrt(RMS)/32
 	# arcs=1886.79/425.5*rms/ref ## 425.5 is the AC 400Hz BW signal gain vs ref singal. 1886.79 is the conversion factor to arcs
 	# 1886.79/425.5 = 0.13857153349
@@ -392,8 +408,7 @@ def SSSM_analog(n22=32):
 	arcs = 4.434289*rms/ref
 	if arcs > 20: # clip
 		arcs=20.0
-                
-	return ref/fn22, rms/fn22, arcs
+	return u0, u1, ref/fn22, rms/fn22, arcs
 
 def SSSM_test():
 	nowns = time.monotonic_ns()
@@ -423,6 +438,128 @@ def SSSM_test():
 #SSSM_test()
 
 
+## LUX Sensor Support
+
+def LUXsensor_read():
+	try:
+		lux = sensor.lux
+		visible = sensor.visible
+		infrared = sensor.infrared
+		full_spectrum = sensor.full_spectrum
+		mode = 'S'
+	except RuntimeError as e:
+		print ('*S* Sensor Overexposed!', e)
+		lux = 999.1
+		visible = 1000000000
+		mode = 'S*OV'
+	if lux < 80.0: # switch to Low Light mode
+		mode = 'L'
+		sensor.gain = adafruit_tsl2591.GAIN_MED  # 9876x gain
+		sensor.integration_time = adafruit_tsl2591.INTEGRATIONTIME_200MS # 100ms
+		time.sleep(0.5)
+		try:
+			lux = sensor.lux
+			visible = sensor.visible
+			infrared = sensor.infrared
+			full_spectrum = sensor.full_spectrum
+		except RuntimeError as e:
+			print ('*L* Sensor Overexposed!', e)
+			lux = 999.2
+			visible = 1000000000
+			mode = 'L*OV'
+		time.sleep(0.5)
+		if lux < 1.0: # switch to Night mode
+			mode = 'N'
+			sensor.gain = adafruit_tsl2591.GAIN_MAX  # 9876x gain
+			sensor.integration_time = adafruit_tsl2591.INTEGRATIONTIME_600MS # 600ms
+			time.sleep(0.6)
+			try:
+				lux = sensor.lux
+				visible = sensor.visible
+				infrared = sensor.infrared
+				full_spectrum = sensor.full_spectrum
+			except RuntimeError as e:
+				print ('*N* Sensor Overexposed!', e)
+				lux = 999.3
+				visible = 1000000000
+				mode = 'N*OV'
+			sensor.gain = adafruit_tsl2591.GAIN_LOW  # 9876x gain
+			sensor.integration_time = adafruit_tsl2591.INTEGRATIONTIME_100MS # 100ms
+			intns = 500000
+			#time.sleep(0.5)
+	else:
+		intns = 500000
+#		time.sleep(0.5)
+	
+	## http://hms.sternhell.at/lightwiki/index.php/Conversion_of_light_measurements
+	#mag = -14.0 + 2.5 * math.log(lux)/2.302585092994046  ## needs log10  mag per arcsec
+	if lux > 0.0:
+		mag = -1.49 * math.log(lux) - 2.11 - 0.5 # vis mag
+	else:
+		mag = -99.0
+
+	#print("Total light: {0}lux".format(lux))
+	# You can also read the raw infrared and visible light levels.
+	# These are unsigned, the higher the number the more light of that type.
+	# There are no units like lux.
+	# Infrared levels range from 0-65535 (16-bit)
+	#infrared = sensor.infrared
+	#print("Infrared light: {0}".format(infrared))
+	# Visible-only levels range from 0-2147483647 (32-bit)
+	#visible = sensor.visible
+	#print("Visible light: {0}".format(visible))
+	# Full spectrum (visible + IR) also range from 0-2147483647 (32-bit)
+	#full_spectrum = sensor.full_spectrum
+	#print("Full spectrum (IR + visible) light: {0}".format(full_spectrum))
+
+	I = visible
+	if ISum < 0 or arcs > 50.0 or esp32s2tft.peripherals.button:
+		print("Init/A2 touched or Auto Resetting I0.")
+		print('SEC------\tMODE\tLUX-----\tMAG--\tINT0--------\tINT---------\tarcs-\tarcs-\tRef--\tRMS---\tarcs-\t BAT%')
+
+		I0 = I
+		Iarr = []
+		ISum = 0
+		i=0
+		for k in range(klen):
+			Iarr.append(I)
+			ISum = ISum+I
+		ir = 0
+		IrmsS = 0
+		Irmsarr = []
+		for k in range(rmslen):
+			Irmsarr.append(0)
+	ISum = ISum + I - Iarr[i]
+	Iarr[i] = I
+	i=i+1
+	if i==klen:
+		i=0
+	I0 = ISum >> kshr
+      
+	dI = I0-I
+	
+	dI2 = dI*dI
+	IrmsS = IrmsS + dI2 - Irmsarr[ir]
+	Irmsarr[ir] = dI2
+	ir=ir+1
+	if ir == rmslen:
+		ir=0
+	dIrms = IrmsS >> rmsshr
+	
+	arms = math.sqrt(dIrms)/I0*1886.79  ## w = 1 arc sec, dI/<I> = 5.3 x 10e-4
+	a = abs(dI/I0)*1886.79  ## w = 1 arc sec, dI/<I> = 5.3 x 10e-4
+
+	#print(IrmsS, dIrms, arms)
+	if a > 50:
+		a=99.99 ## Limiter
+	#long_reading = '{:d}\t{:s}\t{:8.4f}\t{:+5.1f}\t{:12d}\t{:12d}\t{:5.2f}\t{:5.2f}\t{:5.3f}\t{:6.3f}\t{:6.2f}\t{:5.2f}'.format(time.time(), mode, lux, mag, I0, I, a, arms, Voltage(ref), Voltage(rms), arcs, bm_cell_percent)
+	#reading_last='{:s} {:.4f} {:.1f} {:.1f}'.format(mode, lux, mag, arcs)
+
+	return lux, visible, infrared, full_spectrum
+
+
+
+
 ######################### MAIN LOOP ##############################
 
 esp32s2tft.display.auto_refresh = False
@@ -443,55 +580,34 @@ IrmsS = 0
 arcs = 0.0
 
 arcs_hist = []
-refint_hist = []
+lux_hist = []
 nowns = time.monotonic_ns()
 startns = nowns
 intns = 100000
 
-##############
-ZN=0
-CAL_I, CAL_R, CAL_U0, CAL_U1 = SSSM_analog_zero_calib (R2_N_Measurements)
-reading_last='{:4.0f} {:4.0f} {:4.0f} {:4.0f}'.format(mVoltage(CAL_I), mVoltage(CAL_R), mVoltage(CAL_U0), mVoltage(CAL_U1))
-print ('***')
-print ('Zero Cal Init: [I, R, U0, U1] ', reading_last, 'mV {:6.1f} {:6.1f} {:6.1f} {:6.1f}'.format(CAL_I, CAL_R, CAL_U0, CAL_U1))
-
-if abs(mVoltage(CAL_I)) > 20 or abs(mVoltage(CAL_R)) > 20:
-        print ('Zero Offset Calibration Warning! Please check dark.')
-        print ('***')
-        print ('Actual Center: {:6.0f} {:6.0f}'.format(CAL_U0, CAL_U1))
-        CAL_I, CAL_R, CAL_U0, CAL_U1 = SSSM_analog_zero_calib (R2_N_Measurements)
-        print ('Actual Center: {:6.0f} {:6.0f}'.format(CAL_U0, CAL_U1))
-        CAL_I, CAL_R, CAL_U0, CAL_U1 = SSSM_analog_zero_calib (R2_N_Measurements)
-        print ('Actual Center: {:6.0f} {:6.0f}'.format(CAL_U0, CAL_U1))
-        CAL_I, CAL_R, CAL_U0, CAL_U1 = SSSM_analog_zero_calib (R2_N_Measurements)
-        print ('Actual Center: {:6.0f} {:6.0f}'.format(CAL_U0, CAL_U1))
-        print ('***')
-else:
-        print ('Zero Calibration: passed')
-        print ('***')
-#############
-        
 long_reading = '#SEC------\tRef--\tRMS--\tarcs--\tBAT%'
 while True:
 
 	s=int((nowns-startns)/1e9)
 
-	ref, rms, arcs = SSSM_analog (R2_N_Measurements)
+	u0, u1, ref, rms, arcs = SSSM_analog(43)
 	
 	dtl = intns - time.monotonic_ns()-nowns
 	if dtl > 0:
 		sleep (dtl/1000000000.0)
 	nowns = time.monotonic_ns()
 
-        # intensity reference scaled:
-        refint = ref/10 # just a value, linear here
+	if lux_read:
+		lux, visible, infrared, full_spectrum = LUXsensor_read()
+	else:
+		lux = ref/10 # just a value, linear here
 	
 	if len(arcs_hist) >= 240:
 		arcs_hist.pop(0)
-		refint_hist.pop(0)
+		lux_hist.pop(0)
 		
 	arcs_hist.append(arcs)
-	refint_hist.append(refint)
+	lux_hist.append(lux)
 	
 	try:
 	    with open("/lightcurve.log", "a") as light_log:
@@ -506,31 +622,20 @@ while True:
 
 	long_reading = '{:d}\t{:5.3f}\t{:6.3f}\t{:6.3f}\t{:5.1f}'.format(time.time(), Voltage(ref), Voltage(rms), arcs, bm_cell_percent)
         
-        if DipSW['4'].value == False:
-                I, R, U0, U1 = SSSM_analog_zero_calib (R2_N_Measurements)
-                CAL_I = CAL_I*0.99 + I*0.01
-                CAL_R = CAL_R*0.99 + R*0.01
-                CAL_U0 = CAL_U0*0.99 + U0*0.01
-                CAL_U1 = CAL_U1*0.99 + U1*0.01
-                ZN=ZN+1
-	        reading_last='{:4.0f} {:4.0f} {:4.0f} {:4.0f}'.format(mVoltage(I), mVoltage(R), mVoltage(U0), mVoltage(U1))
-                print (ZN,' Zero Cal Info: [I, R, U0, U1] {:6.2f} {:6.2f} {:6.2f} {:6.2f}'.format(mVoltage(I), mVoltage(R), mVoltage(U0), mVoltage(U1)), 'mV avI,R: {:6.1f} {:6.1f} avU0,1: {:6.1f} {:6.1f} U0,1: {:6.1f} {:6.1f}'.format(CAL_I, CAL_R, CAL_U0, CAL_U1, U0, U1))
-        else:
-	        reading_last='SSSM {:6.2f} {:.1f}'.format(mVoltage(ref), arcs)
+	reading_last='SSSM {:6.2f} {:.1f}'.format(mVoltage(ref), arcs)
 
-	# Draw graph into bitmap
+	# Draw graph
 	x=0
 	yp=0
 	for yval in (arcs_hist):
 		# clear column
 		for yc in range(0,GYMAX):
 			if yc % 10 == 0:	
-				graph_bitmap[x, yc] = 4	# grid line
+				graph_bitmap[x, yc] = 4	
 			else:
-				graph_bitmap[x, yc] = 0	# clear
-		graph_bitmap[x, GYMAX-10] = 5 # green (1 arcs grid line) 
+				graph_bitmap[x, yc] = 0	
+		graph_bitmap[x, GYMAX-10] = 5 # green (1 arcs)	
 		yi = GYMAX1 - int(round(yval*10))%GYMAX
-                # draw arcs history graph
 		while yp != yi:
 			if yp > yi:
 				yp = yp - 1
@@ -540,8 +645,7 @@ while True:
 		if yp < GYMAX1:
 			graph_bitmap[x, yp+1] = 1
 
-                # draw ref intensity history graph
-		yval = refint_hist[x]
+		yval = lux_hist[x]
 		while yval > 10.:
 			yval = yval/10.
 		while yval < 1.:
@@ -549,10 +653,10 @@ while True:
 		yi = GYMAX1 - int(round(yval/10.*GYMAX))
 		graph_bitmap[x, yi%GYMAX] = 2
 		if yi < GYMAX1:
-			graph_bitmap[x, yi+1] = 2 #
+			graph_bitmap[x, yi+1] = 2
 		x=x+1
 
-	if arcs < 10.0 and ref > 2000: # ref voltage > 200mV
+	if arcs < 10.0 and ref > 4000: # ref voltage > 200mV
 		status_reading = 'A {:4.1f}"'.format(arcs)
 	else:
 		arcs = 9.99
@@ -604,7 +708,7 @@ while True:
 	
 
         # WiFi + MQTT?
-        if DipSW['2'].value == False and mqtt_client_connected: ## ref signal > 100mV, arcs < 20
+        if DipSW['4'].value == False and DipSW['2'].value == False and mqtt_client_connected: ## ref signal > 100mV, arcs < 20
 		try:
 			esp32s2tft.peripherals.led = True
 			print("MQTT publishing...")
@@ -616,6 +720,8 @@ while True:
 			        #mqtt_client.publish(sssm_time_feed, nowns/1e9)
 			        mqtt_client.publish(sssm_ref_feed, Voltage(ref))
 			        mqtt_client.publish(sssm_arcs_feed, arcs)
+			        if lux_read:
+				        mqtt_client.publish(sssm_lux_feed, lux)
 			if s%60 == 0:
 				mqtt_client.publish(sssm_bat_feed, bm_cell_percent)
 			esp32s2tft.peripherals.led = False
