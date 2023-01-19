@@ -277,7 +277,6 @@ reading = esp32s2tft.add_text(
 
 if 1:
 	reading_aux_last = 'Happy Seeing'
-#	reading_aux_last = 'Happy Birthday'
 
 	reading_aux = esp32s2tft.add_text(
 		text=reading_aux_last,
@@ -288,7 +287,6 @@ if 1:
 	)
 
 	reading_arc_last = 'K150'
-#	reading_arc_last = 'Carsten!!!'
 
 	reading_arc = esp32s2tft.add_text(
 		text=reading_arc_last,
