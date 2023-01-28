@@ -609,10 +609,8 @@ while True:
 		0xFF0000 if bm_cell_percent < 20 else 0x00FF00, battery
 	)
 
-
-
 	esp32s2tft.set_text_color(
-		0x00FF00 if arcs < 1.0 else 0xFF0000 if logging else 0xFF00FF, status
+		0x00FF00 if arcs < PhotoOKArcs else 0xFF0000 if logging else 0xFF00FF, status
 	)
 
 	esp32s2tft.set_text_color(
@@ -622,17 +620,15 @@ while True:
 	#if esp32s2tft.peripherals.button:
 	#	esp32s2tft.peripherals.neopixel[0] = colorwheel(random.randint(0, 255))
 
-	esp32s2tft.display.refresh ()
 
 	if DipSW['3'].value == False: ## ref signal > 100mV, arcs < 20
         	# Firecapture PlugIn Compatible
                 print ('A0: {:4.2f}'.format(Voltage(ref))) # Intensity Value (Volts)
                 print ('A1: {:4.2f}'.format(arcs)) # Normalized RMS / Variation Value / Seeing
+                print ('D0: {:4.2f}'.format(10)) # Samples=10
                 print ('C2: {:4.2f}'.format(sum(arcs_hist[-10:])/10)) # Average Seeing last 10 readings
         else:
                 print (status_reading, long_reading)
-                        
-	
 
         # WiFi + MQTT?
         if WiFi and mqtt_client_connected: ## ref signal > 100mV, arcs < 20
@@ -673,5 +669,8 @@ while True:
 		PinPhotoOK.value = True
 	else:
 		PinPhotoOK.value = False
+
+	esp32s2tft.display.refresh ()
+
 
 
