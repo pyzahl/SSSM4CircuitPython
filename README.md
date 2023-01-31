@@ -88,7 +88,7 @@ DipSWinfoOpen = { ## Logic "True" = OPEN/OFF
 ```
 
 
-When hooked up to USB Serial terminal:
+When hooked up to USB Serial (ttyACM0,..) terminal (CuteCom, screen,... or similar):
 
 ```
 --- STARTUP ---
