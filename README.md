@@ -35,6 +35,8 @@ Adafruit ESP32-S3 TFT Feather - 4MB Flash, 2MB PSRAM, STEMMA QT:
 
 https://www.adafruit.com/product/5483
 
+Optional support for digital LUX light sensor TSL2591: Lux and Mag reading.
+
 ```
 --- STARTUP ---
 
