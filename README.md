@@ -21,7 +21,6 @@ Adapted schematics, connected to A0 and A1 for teh ESP32-S2/S3-TFT replacing the
 
 <img title="Analog circuit schematics and parts" alt="Schematics" src="pcb-schematics-analog.png">
 
-
 This project is based on CircuitPython Version 8 (all required Libs included for reference) running on a Adafruit ESP32-S2/S3-TFT. The S3 is faster and better suited.
 
 Anyhwo, the new S3 seams to have issues with WiFi. WiFi is not required here in USB-Serial mode compatible with the original Firecapture SSSM plugin and interface. Anyways planns are to use for MQTT for web based publishing, this works with the ESP32-S2-TFT, even not long term stable. Causes "Wifi-OFF" Progra mhold on the S3. TDB. May be next gen/version of Circuit Python fixes it. 
