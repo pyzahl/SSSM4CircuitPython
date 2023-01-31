@@ -19,9 +19,9 @@ Read also how to integrate with Firecapture:
 http://www.firecapture.de/
 http://www.joachim-stehle.de/downloads/SSSMon/SSSMonPluginManual.pdf
 
-Adapted schematics, connected to A0 and A1 for teh ESP32-S2/S3-TFT replacing the originally used arduino.
+Adapted schematics, connected to A0 and A1 for the ESP32-S2/S3-TFT replacing the originally used arduino.
 
-<img title="Analog circuit schematics and parts" alt="Schematics" src="pcb-schematics-analog.png">
+<img title="Analog circuit schematics and parts list for SSSM analog electronics" alt="Schematics" src="pcb-schematics-analog.png">
 
 This project is based on CircuitPython Version 8 (all required Libs included for reference) running on a Adafruit ESP32-S2/S3-TFT. The S3 is faster and better suited.
 
