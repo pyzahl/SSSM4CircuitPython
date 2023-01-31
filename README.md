@@ -1,5 +1,7 @@
 # SSSM4CircuitPython
-Solar Scintillation Seeing Monitor for CircuitPython
+Solar Scintillation Seeing Monitor (SSSM) for CircuitPython
+
+A revised verion of a SSSM for CircuitPython on a ESP32-S2 or -S3-TFT.
 
 Project based on hardware described here
 https://www.blackwaterskies.co.uk/2017/06/diy-solar-scintillation-seeing-monitor-sssm/
