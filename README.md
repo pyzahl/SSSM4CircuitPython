@@ -34,6 +34,8 @@ https://circuitpython.org/board/adafruit_feather_esp32s3_tft/
 Adafruit ESP32-S3 TFT Feather - 4MB Flash, 2MB PSRAM, STEMMA QT:
 
 https://www.adafruit.com/product/5483
+https://github.com/adafruit/Adafruit-ESP32-S3-TFT-Feather-PCB
+
 
 Pinouts:
 
