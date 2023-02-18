@@ -1,10 +1,21 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
+import sys
 
-print("SSSM Plot")
+print("SSSM Plot. Usage: python sssmlogplot.py 2023xxxxx.log")
 
-with open("sssm.log") as f:
+logfile = 'sssm.log'
+
+if __name__ == "__main__":
+    #print(f"Arguments count: {len(sys.argv)}")
+    for i, arg in enumerate(sys.argv):
+        #print (arg)
+        logfile = arg
+        
+print ('Reading Logfile: ', logfile)
+        
+with open(logfile) as f:
     lines = f.readlines()
     t  = np.array([line.split(';')[0] for line in lines], dtype=float)/1000
     S  = np.array([line.split(';')[2] for line in lines], dtype=float)
