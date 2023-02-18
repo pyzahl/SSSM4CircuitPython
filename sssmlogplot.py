@@ -21,17 +21,23 @@ datetime.fromtimestamp(t0).strftime("%I:%M:%S")
 start = datetime.fromtimestamp(t0).strftime("%A, %B %d, %Y %I:%M:%S")
 #'Sunday, January 29, 2017 08:30:00'
 
+#fig, axs = plt.subplots(2, 1)
 
-fig, axs = plt.subplots(2, 1)
+ax1 = plt.subplot(211)
+ax2 = plt.subplot(212, sharex=ax1)
+axs = [ax1, ax2]
+
 axs[0].plot(t, S)
 axs[0].plot(t, Sn)
+plt.setp(axs[0].get_xticklabels(), visible=False)
 
-axs[0].set_xlabel('Time in h since '+start)
+axs[1].set_xlabel('Time in h since '+start)
 axs[0].set_ylabel('Seeing in arcs')
 axs[0].grid(True)
 
 axs[1].plot(t, I)
 axs[1].set_ylabel('Intensity in V')
+axs[1].grid(True)
 
-fig.tight_layout()
+#fig.tight_layout()
 plt.show()
