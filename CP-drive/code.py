@@ -1,5 +1,6 @@
 # SSSM for Feather Adafruit ESP32 S2/S3 TFT
 # Welcome to CircuitPython 8 :)
+# (C) PyZahl 2023
 
 import board
 import gc
@@ -38,15 +39,9 @@ gc.collect()   # make some rooooom
 #             Center Value  CZ     Py      Ideal
 R2_N_Measurements = 43 ## sqrt (N Samples for Ref Int and RMS)
 ##
-#### original build V0
-Analog0InCenter   = 32603
-Analog1InCenter   = 32643
-## 32592.0 32624.1 ## original build S3
-## 61  Zero Cal Info: [I, R, U0, U1]   1.88   1.59 1642.94 1644.33 mV avI,R:   11.9   19.7 avU0,1: 32602.7 32643.4 U0,1: 32627.8 32655.5 ## original build PY - ESP32-S3
-
 #### new build V1
-#Analog0InCenter   = 33028
-#Analog1InCenter   = 33029
+Analog0InCenter   = 33028
+Analog1InCenter   = 33029
 ## 55  Zero Cal Info: [I, R, U0, U1]  21.58  20.30 1662.75 1663.12 mV avI,R:  436.3  405.0 avU0,1: 33027.8 33028.8 U0,1: 33021.2 33028.6 ## new build CZ - ESP32-S3
 
 ## Operation Modes
@@ -74,14 +69,14 @@ DipSWinfoOpen = { ## Logic "True" = OPEN/OFF
 ## Print DIP SWITCH INFO
 print ('Note: DIP ON (=GND) := False')
 for pin in sorted(DipSW):
-	DipSW[pin].switch_to_input(pull=Pull.UP)
-        if DipSW[pin].value == False:
-                info = DipSWinfoClosed[pin]
-                dip='On: '
-        else:
-                info = DipSWinfoOpen[pin]
-                dip='Off:'
-	print ('Dip SW', pin, dip, info)
+    DipSW[pin].switch_to_input(pull=Pull.UP)
+    if DipSW[pin].value == False:
+            info = DipSWinfoClosed[pin]
+            dip='On: '
+    else:
+            info = DipSWinfoOpen[pin]
+            dip='Off:'
+    print ('Dip SW', pin, dip, info)
 
 ## Set a GPIO pin for digital Photo OK
 ## Photo OK threashold:
@@ -125,13 +120,13 @@ print("Battery Voltage: {:.2f} V".format(battery_monitor.cell_voltage))
  
 # Get wifi credentials and details and more credentials (MQTT) from a secrets.py file
 try:
-        WiFi = True
-	from secrets import secrets
+    WiFi = True
+    from secrets import secrets
 except ImportError:
-	print("WiFi secrets are kept in secrets.py, please add them there!")
-	print("WiFi off now.")
-        WiFi = False # disable to continue
-	raise
+    print("WiFi secrets are kept in secrets.py, please add them there!")
+    print("WiFi off now.")
+    WiFi = False # disable to continue
+    raise
 
 if WiFi and DipSW['2'].value == False:
         print('Connecting WiFi...')
@@ -292,6 +287,7 @@ reading = esp32s2tft.add_text(
 
 if 1:
 	reading_aux_last = 'Happy Seeing'
+#	reading_aux_last = 'Happy Birthday'
 
 	reading_aux = esp32s2tft.add_text(
 		text=reading_aux_last,
@@ -301,7 +297,8 @@ if 1:
 		text_color=0xFFFF00,
 	)
 
-        reading_arc_last = 'K150'
+	reading_arc_last = 'K150'
+#	reading_arc_last = 'Carsten!!!'
 
 	reading_arc = esp32s2tft.add_text(
 		text=reading_arc_last,
@@ -361,7 +358,7 @@ def SSSM_analog_zero_calib(n22=32):
         I=0
         R=0
         U0=0
-        U1=1
+        U1=0
         ## some integer math radix 2 tricks
 	for i in range(N):
 		u0 = analog0in.value - Analog0InCenter
@@ -401,7 +398,7 @@ def SSSM_analog(n22=32):
 
 	rms = math.sqrt(RMS)  ## sqrt(RMS>>10) = sqrt(RMS)/32
 	# arcs=1886.79/425.5*rms/ref ## 425.5 (=20M/47k) is the AC "400Hz" BW signal gain vs ref singal. 1886.79 is the conversion factor to arcs
-	# 1886.79/425.5 = 4.43428
+	# 1886.79/425.5 = 4.434289
 	# (rms / 32) / (ref / 32)
 	arcs = 4.434289*rms/ref
 	if arcs > 20: # clip
@@ -409,6 +406,7 @@ def SSSM_analog(n22=32):
                 
 	return ref/fn22, rms/fn22, arcs
 
+## SSM test -- Only for testing, no actual use
 def SSSM_test():
 	nowns = time.monotonic_ns()
 	startns = nowns
@@ -499,15 +497,18 @@ while True:
 	# take measurement (SSSM analog)
 	ref, rms, arcs = SSSM_analog (R2_N_Measurements)
 
+        # Calculate filtered values
         w  = 0.10 ## 10% IIR
         wf = 1.00-w
         ref_filter  = wf *  ref_filter + w * ref
         rms_filter  = wf *  rms_filter + w * rms
         arcs_filter = wf * arcs_filter + w * arcs
+        #arcs_average10  = sum(arcs_hist[-10:])/10 # Average Seeing last 10 readings
 
         # intensity reference scaled:
         refint = ref/10 # just a value, linear here
-	
+
+        # record last values for plotting and statistics
 	if len(arcs_hist) >= 240:
 		arcs_hist.pop(0)
 		refint_hist.pop(0)
@@ -515,6 +516,14 @@ while True:
 	arcs_hist.append(arcs)
 	refint_hist.append(refint)
 
+        # Median once enough values
+	if len(arcs_hist) >= 18:
+            tmp = arcs_hist[-17:] # last 17
+            tmp.sort()
+            arcs_median = tmp[8]  # take middle value
+        else:
+            arcs_median = arcs_filter
+        
 	# log to file?	
 	try:
 	    with open("/lightcurve.log", "a") as light_log:
@@ -544,6 +553,7 @@ while True:
 	        reading_last='{:4.0f} {:4.0f} {:4.0f} {:4.0f}'.format(mVoltage(I), mVoltage(R), mVoltage(U0), mVoltage(U1))
                 print (ZN,' Zero Cal Info: [I, R, U0, U1] {:6.2f} {:6.2f} {:6.2f} {:6.2f}'.format(mVoltage(I), mVoltage(R), mVoltage(U0), mVoltage(U1)), 'mV avI,R: {:6.1f} {:6.1f} avU0,1: {:6.1f} {:6.1f} U0,1: {:6.1f} {:6.1f}'.format(CAL_I, CAL_R, CAL_U0, CAL_U1, U0, U1))
         else:
+        # DISPLAY Voltages Io, RMS or arcs_filter if "good"
                 if arcs > 10 and ref > 2000:
 	                reading_last='Io{:6.1f}mV S {:4.1f}"'.format(mVoltage(ref_filter), arcs_filter)
                 else:
@@ -583,8 +593,9 @@ while True:
 			graph_bitmap[x, yi+1] = 2 #
 		x=x+1
 
+        # DISPLAY ARCS MAIN STATUS
 	if arcs < 10.0 and ref > 2000: # ref voltage > 200mV
-		status_reading = 'S {:4.1f}"'.format(arcs)
+		status_reading = 'S {:4.1f}"'.format(arcs_median)
 	else:
 		arcs = 9.99
 		status_reading = 'SSSM *"'
@@ -609,8 +620,10 @@ while True:
 		0xFF0000 if bm_cell_percent < 20 else 0x00FF00, battery
 	)
 
+
+
 	esp32s2tft.set_text_color(
-		0x00FF00 if arcs < PhotoOKArcs else 0xFF0000 if logging else 0xFF00FF, status
+		0x00FF00 if arcs < 1.0 else 0xFF0000 if logging else 0xFF00FF, status
 	)
 
 	esp32s2tft.set_text_color(
@@ -620,15 +633,19 @@ while True:
 	#if esp32s2tft.peripherals.button:
 	#	esp32s2tft.peripherals.neopixel[0] = colorwheel(random.randint(0, 255))
 
+	esp32s2tft.display.refresh ()
 
 	if DipSW['3'].value == False: ## ref signal > 100mV, arcs < 20
         	# Firecapture PlugIn Compatible
                 print ('A0: {:4.2f}'.format(Voltage(ref))) # Intensity Value (Volts)
+#                print ('A0: {:4.2f}'.format(arcs_median-2)) # Median last 17 Seeing readings [testing]
                 print ('A1: {:4.2f}'.format(arcs)) # Normalized RMS / Variation Value / Seeing
-                print ('D0: {:4.2f}'.format(10)) # Samples=10
-                print ('C2: {:4.2f}'.format(sum(arcs_hist[-10:])/10)) # Average Seeing last 10 readings
+#                print ('C2: {:4.2f}'.format(sum(arcs_hist[-10:])/10)) # Average Seeing last 10 readings
+#                print ('M1: {:4.2f}'.format(arcs_median)) # Median last 17 Seeing readings
         else:
                 print (status_reading, long_reading)
+                        
+	
 
         # WiFi + MQTT?
         if WiFi and mqtt_client_connected: ## ref signal > 100mV, arcs < 20
@@ -669,8 +686,5 @@ while True:
 		PinPhotoOK.value = True
 	else:
 		PinPhotoOK.value = False
-
-	esp32s2tft.display.refresh ()
-
 
 
